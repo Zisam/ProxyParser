@@ -1,5 +1,5 @@
 # coding=utf-8
-# 
+# github.com/Zisam/ProxyParser
 import os
 import sys
 reload(sys)
