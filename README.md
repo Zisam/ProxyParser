@@ -9,7 +9,7 @@ https://www.us-proxy.org<br>
 https://www.socks-proxy.net<br>
 
 # Dependences
-Pandas
+Pandas, Requests
 
 # Usage
 Download 'proxy_parser.py' and 'user_agents.txt', and put them in the same directory. Launch proxy_parser.py with your python.
