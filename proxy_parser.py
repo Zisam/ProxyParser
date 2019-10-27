@@ -2,21 +2,15 @@
 # github.com/Zisam/ProxyParser
 import os
 import sys
-reload(sys)
-sys.setdefaultencoding('UTF8')
-encoding = sys.getfilesystemencoding()
 import pandas as pd
 pd.options.mode.chained_assignment = None
 import random
 import requests
 import re
 import threading
+from tqdm import tqdm
 
-if getattr(sys, 'frozen', False):
-	HOME_FOLDER = os.path.dirname(sys.executable)
-elif __file__:
-	HOME_FOLDER = os.path.dirname((unicode(__file__, encoding))).decode('utf8')
-
+HOME_FOLDER = os.path.dirname(__file__)
 
 class ProxyParser:
 	def __init__(self,sites=['gatherproxy','free_proxy','socks_proxy','sslproxies','usproxy']):
@@ -33,7 +27,8 @@ class ProxyParser:
 		self.proxies_tested = self.test_proxies()
 		self.save_to_txt()
 
-	def load_user_agents(self):
+	@staticmethod
+	def load_user_agents():
 		try:
 			user_agents = open(os.path.join(HOME_FOLDER, 'user_agents.txt'), 'r').read().split('\n')
 		except Exception as e:
@@ -45,14 +40,15 @@ class ProxyParser:
 		print('Saved to proxies.txt ')
 
 	def get_proxies(self):
+		print('Loading proxies...')
 		proxy_sub_tables = []
-		for site in self.sites:
+		for site in tqdm(self.sites):
 			if site in self.functions.keys():
 				proxy_sub_table = self.functions[site]()
 				proxy_sub_tables.append(proxy_sub_table)
 		proxy_table = pd.concat(proxy_sub_tables, ignore_index=True)
 		proxy_table.drop_duplicates(inplace=True)
-		print('Got '+str(len(proxy_table.index.values))+' proxies. ')
+		print('Got ' + str(len(proxy_table.index.values)) + ' proxies. ')
 		return proxy_table
 	
 	def test_proxies(self):
@@ -69,7 +65,7 @@ class ProxyParser:
 					if num_threads <= 400:
 						th.start()
 						break
-			for i, th in enumerate(ths):
+			for th in tqdm(ths):
 				th.join()
 		
 		def test_one_proxy(row):
@@ -77,12 +73,13 @@ class ProxyParser:
 			proxy_ip = str(row.values[0]) + ':' + str(int(row.values[1]))
 			headers = {'user-agent': random.choice(self.user_agents), 'Connection': 'Keep-Alive'}
 			try:
-				request = requests.get(link, proxies={"http": "http://" + proxy_ip, "https": "https://" + proxy_ip}, timeout=10, headers=headers)
+				requests.get(link, proxies={"http": "http://" + proxy_ip, "https": "https://" + proxy_ip}, timeout=10, headers=headers)
 			except requests.exceptions.RequestException as e:
 				return
 			else:
 				proxies_tested.append(row.values)
 
+		print('Testing proxies...')
 		test_table()
 		proxy_table = pd.DataFrame(data=proxies_tested,columns=self.proxies.columns)
 		print(str(len(proxy_table.index.values)) + '/'+str(len(self.proxies.index.values))+' proxies passed the test. ')
@@ -91,7 +88,7 @@ class ProxyParser:
 	def get_from_gatherproxy(self):
 		ips = []
 		ports = []
-		for pagenum in xrange(0, 20):
+		for pagenum in range(20):
 			try:
 				data = 'Type=elite&PageIdx=' + str(pagenum) + '&Uptime=0'
 				headers = {'user-agent': random.choice(self.user_agents), 'Connection': 'Keep-Alive'}
@@ -99,7 +96,7 @@ class ProxyParser:
 				req = requests.post('http://gatherproxy.com/proxylist/anonymity/?t=Elite', headers=headers, data=data)
 				content = req.text
 			except Exception as e:
-				print str(e)
+				print(str(e))
 				break
 			else:
 				ips_loc = re.findall('\"PROXY_IP\":\"(\d+.\d+.\d+.\d+)\"', content)
@@ -110,7 +107,8 @@ class ProxyParser:
 		proxy_table = pd.DataFrame(data={'IP Address': ips, 'Port': ports})
 		return proxy_table
 	
-	def get_content(self,url):
+	@staticmethod
+	def get_content(url):
 		try:
 			req = requests.get(url)
 		except Exception as e:
@@ -118,36 +116,42 @@ class ProxyParser:
 		else:
 			return req.text
 	
-	def html_to_df(self,content):
+	@staticmethod
+	def html_to_df(content):
 		tables = pd.read_html(content)
 		proxy_table = tables[0]
 		proxy_table = proxy_table[['IP Address', 'Port']][:-1]
 		proxy_table[['Port']] = proxy_table[['Port']].astype(int)
 		return proxy_table
 	
-	def get_from_url(self,url):
-		content = self.get_content(url)
-		proxy_table = self.html_to_df(content)
+	@classmethod
+	def get_from_url(cls,url):
+		content = cls.get_content(url)
+		proxy_table = cls.html_to_df(content)
 		return proxy_table
 	
-	def get_from_free_proxy_list(self):
+	@classmethod
+	def get_from_free_proxy_list(cls):
 		url = 'https://free-proxy-list.net'
-		proxy_table = self.get_from_url(url)
+		proxy_table = cls.get_from_url(url)
 		return proxy_table
 	
-	def get_from_sslproxies(self):
+	@classmethod
+	def get_from_sslproxies(cls):
 		url = 'https://www.sslproxies.org'
-		proxy_table = self.get_from_url(url)
-		return proxy_table
-		
-	def get_from_usproxy(self):
-		url = 'https://www.us-proxy.org'
-		proxy_table = self.get_from_url(url)
+		proxy_table = cls.get_from_url(url)
 		return proxy_table
 	
-	def get_from_socks_proxy(self):
+	@classmethod
+	def get_from_usproxy(cls):
+		url = 'https://www.us-proxy.org'
+		proxy_table = cls.get_from_url(url)
+		return proxy_table
+	
+	@classmethod
+	def get_from_socks_proxy(cls):
 		url = 'https://www.socks-proxy.net'
-		proxy_table = self.get_from_url(url)
+		proxy_table = cls.get_from_url(url)
 		return proxy_table
 
 def main():
