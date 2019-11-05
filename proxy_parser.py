@@ -8,6 +8,9 @@ import random
 import requests
 import re
 import threading
+import asyncio
+import aiohttp
+
 from tqdm import tqdm
 
 HOME_FOLDER = os.path.dirname(__file__)
@@ -54,33 +57,31 @@ class ProxyParser:
 	def test_proxies(self):
 		proxies_tested = []
 		
-		def test_table():
-			ths = []
-			for index,row in self.proxies.iterrows():
-				th = threading.Thread(target=test_one_proxy, args=[row])
-				ths.append(th)
-			for th in ths:
-				while True:
-					num_threads = threading.activeCount()
-					if num_threads <= 400:
-						th.start()
-						break
-			for th in tqdm(ths):
-				th.join()
-		
-		def test_one_proxy(row):
+		async def fetch(session, row):
 			link = 'http://check.zennolab.com'
 			proxy_ip = str(row.values[0]) + ':' + str(int(row.values[1]))
 			headers = {'user-agent': random.choice(self.user_agents), 'Connection': 'Keep-Alive'}
-			try:
-				requests.get(link, proxies={"http": "http://" + proxy_ip, "https": "https://" + proxy_ip}, timeout=10, headers=headers)
-			except requests.exceptions.RequestException as e:
-				return
-			else:
-				proxies_tested.append(row.values)
+			with aiohttp.Timeout(10):
+				async with session.get(link, proxy="http://" + proxy_ip, headers=headers) as response:
+					return await response.text()
+		
+		async def fetch_all(session, rows, loop):
+			results = await asyncio.gather(*[fetch(session, row) for row in rows], return_exceptions=True)
+			for idx, row in tqdm(enumerate(rows)):
+				if not isinstance(results[idx], Exception):
+					proxies_tested.append(row.values)
+			return results
+		
+		def test_table_async():
+			loop = asyncio.get_event_loop()
+			rows = []
+			for index, row in self.proxies.iterrows():
+				rows.append(row)
+			with aiohttp.ClientSession(loop=loop) as session:
+				results = loop.run_until_complete(fetch_all(session, rows, loop))
 
 		print('Testing proxies...')
-		test_table()
+		test_table_async()
 		proxy_table = pd.DataFrame(data=proxies_tested,columns=self.proxies.columns)
 		print(str(len(proxy_table.index.values)) + '/'+str(len(self.proxies.index.values))+' proxies passed the test. ')
 		return proxy_table
